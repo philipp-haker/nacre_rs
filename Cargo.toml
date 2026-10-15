@@ -1,0 +1,31 @@
+[package]
+name = "nacre_rs"
+version = "0.1.0"
+edition = "2024"
+authors = ["Philipp Haker <philipp.haker@empirius.de>"]
+description = "Safe bindings of and lifecycle management for Perls C-API."
+repository = "forgejo.emp.intern/pha/nacre_rs.git"
+
+[features]
+# backend
+perl_custom = ["dep:cc"]
+perl_sys = ["dep:libperl-sys"]
+
+# logging or tracing?
+tracing = ["dep:tracing"]
+log = ["dep:log"]
+
+[dependencies]
+libperl-sys = { version = "0.4.5", optional = true }
+tracing = { version = "*", optional = true }
+log = { version = "*", optional = true }
+
+
+[build-dependencies]
+cc = { version = "1.8", optional = true }
+
+# Patches for windows suppport.
+[patch.crates-io]
+libperl-macrogen = { git = "https://github.com/philipp-haker/libperl-macrogen", branch = "main" }
+libperl-sys      = { git = "https://github.com/philipp-haker/libperl-rs",       branch = "master" }
+libperl-config   = { git = "https://github.com/philipp-haker/libperl-rs",       branch = "master" }

@@ -1,6 +1,6 @@
-# Nacre-rs
-
 ![Nacre_rs Logo](./nacre_rs.svg)
+
+# Nacre-rs
 
 (Hopefully) safe wrappers around Perls C-API.
 

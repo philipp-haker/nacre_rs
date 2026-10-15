@@ -1,0 +1,211 @@
+//! Module that contains manually linked against perl functios that this module actaually uses.
+//! This will result in the lowest implementation surface overall
+//! However if additional features are required, then additional work has to be done
+
+use std::ffi::{c_char, c_int, c_schar, c_uchar, c_ulong};
+
+/// Type for XS Functions
+pub type XSubFn = Option<unsafe extern "C" fn(*mut PerlInterpreter, *mut CV)>;
+/// Signature expected for the `init_xs` function
+pub type XsInitFn = Option<unsafe extern "C" fn(*mut PerlInterpreter)>;
+
+/// Dumb wrapper for PerlInterpreter.
+/// As I am only working with pointers, I do not need to match the size;
+#[repr(C)]
+pub struct PerlInterpreter {
+    _private: [u8; 0],
+}
+
+///
+#[repr(C)]
+pub struct CV {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct SV {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+pub struct OP {
+    _private: [u8; 0],
+}
+
+#[allow(non_camel_case_types)]
+pub type Sighandler_t = Option<unsafe extern "C" fn(c_int)>;
+
+#[cfg(windows)]
+pub type U32 = c_ulong;
+
+#[cfg(not(windows))]
+pub type U32 = c_uint;
+
+#[cfg(windows)]
+pub type U8 = c_uchar;
+
+#[cfg(not(windows))]
+compile_error!("perl_custom: set U8 to this perl's U8TYPE (config.h), usually c_uchar on LP64");
+
+pub const PERL_EXIT_EXPECTED: u32 = 0x01;
+pub const PERL_EXIT_DESTRUCT_END: u32 = 0x02;
+pub const PERL_EXIT_WARN: u32 = 0x04;
+pub const PERL_EXIT_ABORT: u32 = 0x08;
+
+unsafe extern "C" {
+
+    /// Allocates a new Perl interpreter.
+    /// See [perlembed](https://perldoc.perl.org/perlembed)
+    pub fn perl_alloc() -> *mut PerlInterpreter;
+
+    /// Initializes a new Perl interpreter.
+    /// See [perlembed](https://perldoc.perl.org/perlembed)
+    pub fn perl_construct(my_perl: *mut PerlInterpreter);
+
+    /// Tells a Perl interpreter to parse a Perl script.
+    /// This performs most of the initialisation of a Perl interpreter.
+    /// See L<perlembed> for a tutorial.
+    ///
+    /// # Parameters
+    /// - `my_perl` points to the Perl interpreter that is to parse the script.
+    ///   It must have been previously created through the use of [`perl_alloc`] and [`perl_construct`].
+    /// - `xsinit` points to a callback function that will be called to set up the ability for this Perl interpreter to load XS extensions, or may be null to perform no such setup.
+    /// - `argc` and `argv` supply a set of command-line arguments to the Perl interpreter, as would normally be passed to the C<main> function of a C program.
+    ///
+    /// `argv[argc]` must be null.
+    /// These arguments are where the script to parse is specified, either by naming a script file or by providing a script in a [-e] option.
+    /// If `$0` will be written to in the Perl interpreter, then the argument strings must be in writable memory, and so mustn't just be string constants.
+    ///
+    /// `env` specifies a set of environment variables that will be used by this Perl interpreter.
+    /// If non-null, it must point to a null-terminated array of environment strings.
+    /// If null, the Perl interpreter will use the environment supplied by the `environ` global variable.
+    /// This function initialises the interpreter, and parses and compiles the script specified by the command-line arguments.
+    /// This includes executing code in `BEGIN`, `UNITCHECK`, and `CHECK` blocks.
+    /// It does not execute `INIT` blocks or the main program.
+    ///
+    /// # Returns
+    /// Returns an integer of slightly tricky interpretation.
+    /// The correct use of the return value is as a truth value indicating whether there was a failure in initialisation.
+    /// If zero is returned, this indicates that initialisation was successful, and it is safe to proceed to call [`perl_run`] and make other use of it.
+    /// If a non-zero value is returned, this indicates some problem that means the interpreter wants to terminate.
+    /// The interpreter should not be just abandoned upon such failure;
+    /// the caller should proceed to shut the interpreter down cleanly with [`perl_destruct`] and free it with [`perl_free`].
+    ///
+    /// For historical reasons, the non-zero return value also attempts to
+    /// be a suitable value to pass to the C library function `exit` (or to
+    /// return from `main`), to serve as an exit code indicating the nature
+    /// of the way initialisation terminated.  However, this isn't portable,
+    /// due to differing exit code conventions.  An attempt is made to return
+    /// an exit code of the type required by the host operating system, but
+    /// because it is constrained to be non-zero, it is not necessarily possible
+    /// to indicate every type of exit.  It is only reliable on Unix, where a
+    /// zero exit code can be augmented with a set bit that will be ignored.
+    /// In any case, this function is not the correct place to acquire an exit
+    /// code: one should get that from [`perl_destruct`].
+    pub fn perl_parse(
+        my_perl: *mut PerlInterpreter,
+        xs_init: XsInitFn,
+        argc: c_int,
+        argv: *mut *mut c_char,
+        env: *mut *mut c_char,
+    ) -> c_int;
+
+    /// Tells a Perl interpreter to run its main program.
+    /// See L<perlembed> for a tutorial.
+    ///
+    /// # Parameters
+    /// - `my_perl` points to the Perl interpreter.
+    /// It must have been previously created through the use of L</perl_alloc> and L</perl_construct>,
+    /// and initialised through L</perl_parse>.
+    /// This function should not be called if L</perl_parse> returned a non-zero value, indicating a failure in initialisation or compilation.
+    ///
+    /// This function executes code in C<INIT> blocks, and then executes the main program.
+    /// The code to be executed is that established by the prior call to L</perl_parse>.
+    /// If the interpreter's C<PL_exit_flags> word does not have the C<PERL_EXIT_DESTRUCT_END> flag set, then this function will also execute code in C<END> blocks.
+    /// If it is desired to make any further use of the interpreter after calling this function, then C<END> blocks should be postponed to L</perl_destruct> time by setting that flag.
+    ///
+    /// # Returns
+    /// Returns an integer of slightly tricky interpretation.  The correct use
+    /// of the return value is as a truth value indicating whether the program
+    /// terminated non-locally.  If zero is returned, this indicates that
+    /// the program ran to completion, and it is safe to make other use of the
+    /// interpreter (provided that the C<PERL_EXIT_DESTRUCT_END> flag was set as
+    /// described above).  If a non-zero value is returned, this indicates that
+    /// the interpreter wants to terminate early.  The interpreter should not be
+    /// just abandoned because of this desire to terminate; the caller should
+    /// proceed to shut the interpreter down cleanly with L</perl_destruct>
+    /// and free it with L</perl_free>.
+    ///
+    /// For historical reasons, the non-zero return value also attempts to
+    /// be a suitable value to pass to the C library function C<exit> (or to
+    /// return from C<main>), to serve as an exit code indicating the nature of
+    /// the way the program terminated.  However, this isn't portable, due to
+    /// differing exit code conventions.  An attempt is made to return an exit
+    /// code of the type required by the host operating system, but because
+    /// it is constrained to be non-zero, it is not necessarily possible to
+    /// indicate every type of exit.  It is only reliable on Unix, where a zero
+    /// exit code can be augmented with a set bit that will be ignored.  In any
+    /// case, this function is not the correct place to acquire an exit code:
+    /// one should get that from L</perl_destruct>.
+    pub fn perl_run(my_perl: *mut PerlInterpreter) -> c_int;
+
+    /// Shuts down a Perl interpreter.  See L<perlembed> for a tutorial.
+    ///
+    /// `my_perl` points to the Perl interpreter.
+    /// It must have been previously created through the use of [`perl_alloc`] and [`perl_construct`].
+    /// It may have been initialised through [`perl_parse`], and may have been used through [`perl_run`] and other means.
+    /// This function should be called for any Perl interpreter that has been constructed with [`perl_construct`],
+    /// even if subsequent operations on it failed, for example if [`perl_parse`] returned a non-zero value.
+    ///
+    /// If the interpreter's [`PL_exit_flags`] word has the [`PERL_EXIT_DESTRUCT_END`] flag set,
+    /// then this function will execute code in [`END`] blocks before performing the rest of destruction.
+    /// If it is desired to make any use of the interpreter between [`perl_parse`] and [`perl_destruct`] other than just calling [`perl_run`],
+    /// then this flag should be set early on.
+    /// This matters if [`perl_run`] will not be called, or if anything else will be done in addition to calling [`perl_run`].
+    ///
+    /// Returns a value be a suitable value to pass to the C library function [`exit`] (or to return from `main`),
+    /// to serve as an exit code indicating the nature of the way the interpreter terminated.
+    /// This takes into account any failure of [`perl_parse`] and any early exit from [`perl_run`].
+    /// The exit code is of the type required by the host operating system,
+    /// so because of differing exit code conventions it is not portable to interpret specific numeric values as having specific meanings.
+    pub fn perl_destruct(my_perl: *mut PerlInterpreter) -> c_int;
+
+    /// Releases a Perl interpreter.
+    /// See L<perlembed>.
+    pub fn perl_free(my_perl: *mut PerlInterpreter);
+
+    pub fn Perl_newXS(
+        my_perl: *mut PerlInterpreter,
+        name: *const c_char,
+        sub: XSubFn,
+        file: *const c_char,
+    ) -> *mut CV;
+
+    pub fn Perl_sys_init3(
+        argc: *mut c_int,
+        argv: *mut *mut *mut c_char,
+        env: *mut *mut *mut c_char,
+    );
+    pub fn Perl_sys_term();
+    pub fn Perl_set_context(my_perl: *mut PerlInterpreter);
+
+    pub fn Perl_rsignal_state(my_perl: *mut PerlInterpreter, i: c_int) -> Sighandler_t;
+    pub fn Perl_rsignal(my_perl: *mut PerlInterpreter, i: c_int, t: Sighandler_t) -> Sighandler_t;
+    pub static mut PL_csighandlerp: Sighandler_t;
+    pub static PL_sig_name: [*const c_char; 0];
+    pub static PL_sig_num: [c_int; 0];
+
+    pub fn boot_DynaLoader(my_perl: *mut PerlInterpreter, cv: *mut CV);
+    #[cfg(windows)]
+    pub fn boot_Win32CORE(my_perl: *mut PerlInterpreter, cv: *mut CV);
+
+    #[link_name = "emperl_exit_flags_ptr"]
+    pub fn exit_flags_ptr(my_perl: *mut PerlInterpreter) -> *mut U8;
+    #[link_name = "emperl_origalen_ptr"]
+    pub fn origalen_ptr(my_perl: *mut PerlInterpreter) -> *mut U32;
+    #[link_name = "emperl_perl_destruct_level_ptr"]
+    pub fn perl_destruct_level_ptr(my_perl: *mut PerlInterpreter) -> *mut c_schar;
+    #[link_name = "emperl_restartop"]
+    pub fn restartop(my_perl: *mut PerlInterpreter) -> *const OP;
+
+}
