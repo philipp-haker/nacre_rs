@@ -1,0 +1,2 @@
+[env]
+CC = { value = "gcc", force = false }

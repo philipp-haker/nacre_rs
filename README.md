@@ -1,8 +1,26 @@
-![Nacre_rs Logo](./nacre_rs.svg)
+<center>
+  <img src="./nacre_rs.svg" align="center" alt="alt text">
+</center>
 
 # Nacre-rs
 
 (Hopefully) safe wrappers around Perls C-API.
+
+> :warning: WINDOWS PROBLEMS :warning:
+> 
+> If you build on windows, then there are some problems using `libperl-sys`.
+> The official version of the create only supports linux environments.
+> By using these patched versions they should also work on windows.
+> 
+> ```toml
+> # Patches for windows suppport.
+> [patch.crates-io]
+> libperl-macrogen = { git = "https://github.com/philipp-haker/libperl-macrogen", branch = "main"   }
+> libperl-sys      = { git = "https://github.com/philipp-haker/libperl-rs",       branch = "master" }
+> libperl-config   = { git = "https://github.com/philipp-haker/libperl-rs",       branch = "master" }
+> ```
+> If you don't want to apply random patches, then you have to use `perl_custom` as the backend. 
+>
 
 ## Examples
 

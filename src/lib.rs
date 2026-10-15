@@ -1,6 +1,6 @@
 // Always present
-use core::ffi::{c_char, CStr};
 use core::convert::Infallible;
+use core::ffi::{CStr, c_char};
 use core::fmt::{Debug, Formatter};
 
 // Not avalable on no-std :(
@@ -63,7 +63,7 @@ impl ParseError {
 }
 
 /// XS_init
-unsafe extern "C" fn default_xs_init(my_perl: *mut backend::PerlInterpreter) {
+pub unsafe extern "C" fn default_xs_init(my_perl: *mut backend::PerlInterpreter) {
     #[cfg(windows)]
     use backend::boot_Win32CORE;
     use backend::{Perl_newXS, boot_DynaLoader};
@@ -93,14 +93,15 @@ pub struct FFIStringKeepAlive {
 
 impl Debug for FFIStringKeepAlive {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(
-            self
-            .pointers
-            .iter()
-            .copied()
-            .map_while(std::ptr::NonNull::new)
-            .map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) })
-        ).finish()
+        f.debug_list()
+            .entries(
+                self.pointers
+                    .iter()
+                    .copied()
+                    .map_while(std::ptr::NonNull::new)
+                    .map(|ptr| unsafe { CStr::from_ptr(ptr.as_ptr()) }),
+            )
+            .finish()
     }
 }
 

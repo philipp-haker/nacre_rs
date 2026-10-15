@@ -1,12 +1,11 @@
-use crate::Sys;
-use crate::{info, trace};
-use crate::default_xs_init;
 use super::backend::{
-    Perl_set_context, PerlInterpreter, exit_flags_ptr, perl_destruct, perl_free, perl_parse,
-    perl_run, XsInitFn,
-
+    Perl_set_context, PerlInterpreter, XsInitFn, exit_flags_ptr, perl_destruct, perl_free,
+    perl_parse, perl_run,
 };
 use super::{ExitFlags, New, Parsed, PerlPhase};
+use crate::Sys;
+use crate::default_xs_init;
+use crate::{info, trace};
 use core::ffi::c_int;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -171,12 +170,11 @@ impl<Phase: PerlPhase> Perl<Phase> {
 
 /// Functionality for new perl interpreters.
 impl Perl<New> {
-
     /// Calls perl_parse with [`default_xs_init`] function, given arguments and no environments.
-    /// 
+    ///
     /// See [`Self::parse`] for more details.
     #[inline]
-    pub fn parse_default_no_env<I, S1, S2>(
+    pub fn parse_default_no_env(
         self,
         args: &[impl AsRef<OsStr> + Debug],
     ) -> Result<Perl<Parsed>, super::ParseError> {
@@ -184,58 +182,59 @@ impl Perl<New> {
     }
 
     /// Calls `perl_parse` with [`default_xs_init`] as the xs init function.
-    /// 
+    ///
     /// See [`Self::parse`] for more details.
     #[inline]
     pub fn parse_default<I, S1, S2>(
         self,
         args: &[impl AsRef<OsStr> + Debug],
         env: Option<I>,
-    ) -> Result<Perl<Parsed>, super::ParseError> 
-    where 
+    ) -> Result<Perl<Parsed>, super::ParseError>
+    where
         I: IntoIterator<Item = (S1, S2)>,
         S1: AsRef<OsStr>,
-        S2: AsRef<OsStr> {
-        unsafe {
-            Self::parse(self, Some(default_xs_init), args, env)
-        }
+        S2: AsRef<OsStr>,
+    {
+        unsafe { Self::parse(self, Some(default_xs_init), args, env) }
     }
-    
+
     /// Calls `perl_parse` with the given `xs_init` function and arguments, but no environments.
-    /// 
+    ///
     /// See [`Self::parse`] for more details.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The provided function must be a valid XsInitFn.
     #[inline]
-    pub unsafe fn parse_no_env(self, xs_init: XsInitFn, args: &[impl AsRef<OsStr> + Debug]) -> Result<Perl<Parsed>, super::ParseError> {
+    pub unsafe fn parse_no_env(
+        self,
+        xs_init: XsInitFn,
+        args: &[impl AsRef<OsStr> + Debug],
+    ) -> Result<Perl<Parsed>, super::ParseError> {
         unsafe {
             Self::parse::<[(&'static OsStr, &'static OsStr); 0], _, _>(self, xs_init, args, None)
         }
-    } 
+    }
 
     #[inline]
-    unsafe fn parse<I, S1, S2>(
+    pub unsafe fn parse<I, S1, S2>(
         self,
         xs_init: XsInitFn,
         args: &[impl AsRef<OsStr> + Debug],
         env: Option<I>,
-    ) -> Result<Perl<Parsed>, super::ParseError> 
+    ) -> Result<Perl<Parsed>, super::ParseError>
     where
         I: IntoIterator<Item = (S1, S2)>,
         S1: AsRef<OsStr>,
-        S2: AsRef<OsStr>
+        S2: AsRef<OsStr>,
     {
-        unsafe {
-            Self::_parse(self, xs_init, args, env.map(IntoIterator::into_iter))
-        }
+        unsafe { Self::_parse(self, xs_init, args, env.map(IntoIterator::into_iter)) }
     }
 
     /// Calls `perl_parse`
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The provided function must be a valid xs_init Function.
     #[cfg_attr(
         feature = "tracing",
@@ -253,11 +252,11 @@ impl Perl<New> {
         xs_init: XsInitFn,
         args: &[impl AsRef<OsStr> + Debug],
         env: Option<I>,
-    ) -> Result<Perl<Parsed>, super::ParseError> 
+    ) -> Result<Perl<Parsed>, super::ParseError>
     where
         I: Iterator<Item = (S1, S2)>,
         S1: AsRef<OsStr>,
-        S2: AsRef<OsStr>
+        S2: AsRef<OsStr>,
     {
         // New phase
         let phase = Parsed::new(args, env);

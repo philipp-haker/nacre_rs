@@ -41,7 +41,10 @@ impl Drop for PerlSysInner {
 impl PerlSysInner {
     /// Wraps `perl_sys_init3` by creating c-compatible arguments and storing themfor the duration of the call.
     #[cfg_attr(feature = "tracing", tracing::instrument)]
-    fn _init3<S1, S2>(args: &[impl AsRef<OsStr> + Debug], env: impl IntoIterator<Item=(S1, S2)> + Debug) -> Self
+    fn _init3<S1, S2>(
+        args: &[impl AsRef<OsStr> + Debug],
+        env: impl IntoIterator<Item = (S1, S2)> + Debug,
+    ) -> Self
     where
         S1: AsRef<OsStr>,
         S2: AsRef<OsStr>,
@@ -50,7 +53,8 @@ impl PerlSysInner {
 
         let args = FFIStringKeepAlive::from_os_str(args.iter().map(AsRef::as_ref));
         let env = FFIStringKeepAlive::from_cstrings(
-            env.into_iter().map(|(k, v)| super::env_pair_to_cstring(k.as_ref(), v.as_ref())),
+            env.into_iter()
+                .map(|(k, v)| super::env_pair_to_cstring(k.as_ref(), v.as_ref())),
         );
 
         let mut args_ptr = args.as_mut_ptr();
@@ -122,8 +126,11 @@ impl Sys {
     /// - `(perl_sys, true)` if a NEW [`Sys`] was initialized and the provided arguments were used to initilize it.
     /// - `(perl_sys, false)` if an ALREADY EXISTING [`Sys`] was returned and the provided arguments were therefore ignored.
     #[cfg_attr(feature = "tracing", tracing::instrument)]
-    pub fn init3<S1, S2>(args: &[impl AsRef<OsStr> + Debug], env: impl IntoIterator<Item=(S1, S2)> + Debug) -> (Self, bool)
-    where 
+    pub fn init3<S1, S2>(
+        args: &[impl AsRef<OsStr> + Debug],
+        env: impl IntoIterator<Item = (S1, S2)> + Debug,
+    ) -> (Self, bool)
+    where
         S1: AsRef<OsStr>,
         S2: AsRef<OsStr>,
     {

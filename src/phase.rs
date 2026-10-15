@@ -31,9 +31,9 @@ impl Debug for Parsed {
 }
 
 impl Parsed {
-    pub(super) fn new<I, S1, S2>(args: &[impl AsRef<OsStr>], env: Option<I>) -> Self 
-    where 
-        I: IntoIterator<Item= (S1, S2)>,
+    pub(super) fn new<I, S1, S2>(args: &[impl AsRef<OsStr>], env: Option<I>) -> Self
+    where
+        I: IntoIterator<Item = (S1, S2)>,
         S1: AsRef<OsStr>,
         S2: AsRef<OsStr>,
     {
@@ -42,7 +42,8 @@ impl Parsed {
         let args = FFIStringKeepAlive::from_os_str(args.iter().map(AsRef::as_ref));
         let env = env.map(|env| {
             FFIStringKeepAlive::from_cstrings(
-                env.into_iter().map(|(k, v)| env_pair_to_cstring(k.as_ref(), v.as_ref())),
+                env.into_iter()
+                    .map(|(k, v)| env_pair_to_cstring(k.as_ref(), v.as_ref())),
             )
         });
 

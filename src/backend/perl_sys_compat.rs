@@ -24,19 +24,19 @@ pub use libperl_sys::{
     U8,
     U32,
 
+    XSINIT_t as XsInitFn,
+    XSUBADDR_t as XSubFn,
     perl_alloc,
     perl_construct,
     perl_destruct,
     perl_free,
     perl_parse,
     perl_run,
-
-    XSINIT_t as XsInitFn,
-    XSUBADDR_t as XSubFn,
 };
 
 // Must be linked and exported with different signature :/
 #[inline(always)]
+#[allow(non_snake_case)]
 pub unsafe fn Perl_set_context(my_perl: *mut PerlInterpreter) {
     unsafe {
         libperl_sys::perl_core::Perl_set_context(my_perl as *mut c_void);
