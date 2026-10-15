@@ -30,11 +30,6 @@
       transform-box: fill-box;
       transform-origin: center;
       animation: spin 8s linear infinite;
-      animation-play-state: paused;
-    }
-
-    #logo:hover #gear-9 {
-      animation-play-state: running;
     }
   </style>
   <sodipodi:namedview
