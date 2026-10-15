@@ -36,17 +36,7 @@ macro_rules! __FILE__ {
     };
 }
 
-// Checking that exactly one perl_backend is in use;
-const _: () = {
-    #[cfg(all(feature = "perl_custom", feature = "perl_sys"))]
-    compile_error!(r#"Please use either feature flag: "perl_custom" or "perl_sys". Not Both"#);
-
-    #[cfg(not(any(feature = "perl_custom", feature = "perl_sys")))]
-    compile_error!(r#"Please use either feature flag: "perl_custom" or "perl_sys"."#);
-
-    ()
-};
-
+#[derive(Debug, Eq, PartialEq)]
 pub struct ParseError {
     code: i32,
     destruct: i32,

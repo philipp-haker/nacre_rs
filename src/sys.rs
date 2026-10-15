@@ -11,18 +11,42 @@
 //!
 //! Use [`Sys::get_initialized`] to get the already running system, if one exists.
 //!
-use super::backend::{Perl_sys_init3, Perl_sys_term, perl_alloc, perl_construct};
+use super::backend::{Perl_sys_init3, Perl_sys_term, perl_alloc, perl_construct, Sighandler_t, PL_csighandlerp, PL_sig_name, PL_sig_num};
 use super::{FFIStringKeepAlive, New, Perl};
 use crate::{debug, info, trace, warn};
 use core::ffi::{CStr, c_char, c_int};
 use core::fmt::{Debug, Formatter};
 use core::ptr::NonNull;
 use std::ffi::OsStr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 /// A global SYS_GUARD to avoid creating new PerlSys Instances if that is not neccessary.
 /// As long as this weak reference can be upgraded, new calls to [`PerlSys::init3`] will NOT call `perl_sys_init3`!
-static SYS_GUARD: Mutex<Weak<PerlSysInner>> = Mutex::new(Weak::new());
+static SYS_STATE: Mutex<SysState> = Mutex::new(SysState::Uninit);
+/// Sometimes calling sys_term goes bad, if no interpreters have been created.
+static INTERPRETER_ALLOCATED: AtomicBool = AtomicBool::new(false);
+
+enum SysState {
+    /// `perl_sys_init3` was never called.
+    /// Calling it the next time will initialize the system.
+    Uninit,
+    /// `perl_sys_init3` was called.
+    /// Further calls will only give you the existing system.
+    /// If the systems are gone, then you will no longer get any
+    Init(Weak<PerlSysInner>)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SysTerminated;
+
+impl std::fmt::Display for SysTerminated {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Perl System already terminated.")
+    }
+}
+
+impl std::error::Error for SysTerminated {}
 
 /// A guard that calls `perl_sys_term` on drop.
 struct PerlSysInner {
@@ -31,9 +55,12 @@ struct PerlSysInner {
 
 impl Drop for PerlSysInner {
     fn drop(&mut self) {
-        info!("perl_sys no longer in use; terminating.");
-        unsafe {
-            Perl_sys_term();
+        // TODO check for threaded perl
+        if AtomicBool::load(&INTERPRETER_ALLOCATED, Ordering::Acquire) {
+            info!("perl_sys no longer in use; terminating.");
+            unsafe { Perl_sys_term(); }
+        } else {
+            warn!("No perl interpreter was ever created; skipping perl_sys_term.");
         }
     }
 }
@@ -108,9 +135,9 @@ impl Sys {
     /// If none is returned you have to initialize one via [`Self::init3`].
     #[allow(unused)]
     pub fn get_initialized() -> Option<Self> {
-        match SYS_GUARD.lock() {
-            Ok(weak) => weak.upgrade().map(|inner| Self { inner }),
-            Err(_e) => None,
+        match &*SYS_STATE.lock().unwrap_or_else(PoisonError::into_inner) {
+            SysState::Init(weak) => weak.upgrade().map(|inner| Self { inner }),
+            SysState::Uninit => None,
         }
     }
 
@@ -129,34 +156,30 @@ impl Sys {
     pub fn init3<S1, S2>(
         args: &[impl AsRef<OsStr> + Debug],
         env: impl IntoIterator<Item = (S1, S2)> + Debug,
-    ) -> (Self, bool)
+    ) -> Result<(Self, bool), SysTerminated>
     where
         S1: AsRef<OsStr>,
         S2: AsRef<OsStr>,
     {
-        let (inner, flag) = match SYS_GUARD.lock() {
-            Ok(mut weak) => {
-                if let Some(guard) = weak.upgrade() {
-                    debug!("Found active perl_sys; resuing");
-                    (guard, false)
-                } else {
-                    info!("No perl_sys is active; creating new one");
-                    let guard = Arc::new(PerlSysInner::_init3(args, env));
-                    *weak = Arc::downgrade(&guard);
-                    (guard, true)
-                }
-            }
-            Err(mut e) => {
-                warn!("SYS_GUARD was poisoned; creating new perl_sys");
-                let guard = Arc::new(PerlSysInner::_init3(args, env));
-                **e.get_mut() = Arc::downgrade(&guard);
-                SYS_GUARD.clear_poison();
-                info!("Cleared poison");
-                (guard, true)
-            }
-        };
+        let mut state = SYS_STATE.lock().unwrap_or_else(|poisoned| {
+            warn!("SYS_STATE was poisoned; recovering");
+            SYS_STATE.clear_poison();
+            poisoned.into_inner()
+        });
 
-        (Sys { inner }, flag)
+        if let SysState::Init(weak) = &*state {
+            return weak
+                .upgrade()
+                .map(|inner| (Sys {inner}, false))
+                .inspect(|_| debug!("Found existing system; Reusing."))
+                .ok_or(SysTerminated)
+        }
+
+        info!("No perl system was ever initialized; creating one");
+        let inner = Arc::new(PerlSysInner::_init3(args, env));
+        *state = SysState::Init(Arc::downgrade(&inner));
+
+        Ok((Sys { inner }, true))
     }
 
     /// Creates a new perl instance by calling `perl_alloc` and `perl_construct` (in that order).
@@ -164,6 +187,7 @@ impl Sys {
     pub fn new_perl(&self) -> Option<Perl<New>> {
         trace!("Calling perl_alloc");
         let perl = unsafe { NonNull::new(perl_alloc())? };
+        INTERPRETER_ALLOCATED.store(true, Ordering::Release);
 
         trace!("Calling perl_construct");
         unsafe {
@@ -176,8 +200,8 @@ impl Sys {
 
     /// The C-level handler perl installs for %SIG entries (PL_csighandlerp).
     /// Process-global and mutable, so only the current value is meaningful.
-    pub(crate) fn c_sighandler() -> super::backend::Sighandler_t {
-        unsafe { super::backend::PL_csighandlerp }
+    pub(crate) fn c_sighandler() -> Sighandler_t {
+        unsafe { PL_csighandlerp }
     }
 
     /// Returns an iterator over all the signals.
@@ -209,11 +233,11 @@ pub struct CSignals {
 
 impl CSignals {
     fn names() -> *const *const c_char {
-        (&raw const super::backend::PL_sig_name).cast::<*const c_char>()
+        (&raw const PL_sig_name).cast::<*const c_char>()
     }
 
     fn nums() -> *const c_int {
-        (&raw const super::backend::PL_sig_num).cast::<c_int>()
+        (&raw const PL_sig_num).cast::<c_int>()
     }
 }
 

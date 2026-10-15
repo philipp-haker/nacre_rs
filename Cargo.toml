@@ -20,9 +20,11 @@ libperl-sys = { version = "0.4.5", optional = true }
 tracing = { version = "^0.1", optional = true }
 log = { version = "^0.4", optional = true }
 
-
 [build-dependencies]
 cc = { version = "1.8", optional = true }
+
+[dev-dependencies]
+rusty-fork = "0.3"
 
 # Patches for windows suppport.
 [patch.crates-io]
